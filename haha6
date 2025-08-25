@@ -1,0 +1,364 @@
+#include <Ps3Controller.h>
+
+// Define motor driver pins according to your wiring diagram
+//motor driver 1 
+#define IN11 2
+#define IN21 4 
+#define IN31 16   
+#define IN41 17 
+#define ENA1 12
+#define ENB1 13     
+
+//motor driver 2
+#define IN12 25
+#define IN22 26
+#define IN32 27
+#define IN42 33
+#define ENA2 14
+#define ENB2 15
+
+unsigned int slow = 50000;
+
+int frontL;
+int frontR;
+
+int sideL;
+int sideR;
+
+int Speed;
+
+uint8_t key;
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize motor direction pins as outputs
+  //motor driver 1
+  pinMode(IN11, OUTPUT);
+  pinMode(IN21, OUTPUT);
+  pinMode(IN31, OUTPUT);
+  pinMode(IN41, OUTPUT);
+
+  //motor driver 2
+  pinMode(IN12, OUTPUT);
+  pinMode(IN22, OUTPUT);
+  pinMode(IN32, OUTPUT);
+  pinMode(IN42, OUTPUT);
+
+  // Setup PWM on motor enable pins and servo pin at 50Hz and 16-bit resolution
+  //motor driver 1
+  ledcAttach(ENA1, 50, 16);  
+  ledcAttach(ENB1, 50, 16);  
+
+  //motor driver 2
+  ledcAttach(ENA2, 50, 16);
+  ledcAttach(ENB2, 50, 16);
+
+  // Connect to PS3 controller with your ESP32 BT MAC address
+  Ps3.begin("F0:24:F9:0E:45:D6");
+  Serial.println("Bluetooth pairing started. Press the PS button on your controller.");
+}
+
+void loop() {
+  if (Ps3.isConnected()) {
+    key = 0;
+
+    frontL = Ps3.data.analog.stick.ly; 
+    frontR = Ps3.data.analog.stick.ry; 
+
+    sideL = Ps3.data.analog.stick.lx; 
+    sideR = Ps3.data.analog.stick.rx;
+
+    Speed = Ps3.data.analog.button.r2;
+
+    int frontLa = abs(frontL); 
+    int frontRa = abs(frontR); 
+
+    int sideLa = abs(sideL);  
+    int sideRa = abs(sideR);  
+
+    unsigned long frontS = map(((frontLa + frontRa) / 2), 0, 128, 0, 65535);
+
+    unsigned long sideS = map(((sideLa + sideRa) / 2), 0, 128, 0, 65535);
+
+    int speeds = (uint32_t)((uint64_t)map(Speed, 0, 256, 0, slow));
+
+    if((frontLa < 20) && (frontRa < 20) && (sideLa < 20) && (sideRa < 20)) {
+        stop();
+        stopboost();
+
+        key=1;
+    }
+
+    if((frontL < -20) && (frontR < -20) && (sideLa < 20) && (sideRa < 20)) {
+        //straight
+        gostraight();
+        ledcWrite(ENA1, frontS);
+        ledcWrite(ENB1, frontS);
+
+        key = 2;
+
+        if(Speed > 15) {
+            boost();
+
+            key = 69;
+        }
+    }
+
+    if((frontL > 20) && (frontR > 20) && (sideLa < 20) && (sideRa < 20)) {
+        //back
+        goback();
+        ledcWrite(ENA1, frontS);
+        ledcWrite(ENB1, frontS);
+        
+        key = 3;
+
+        if(Speed > 15) {
+            reverseboost();
+
+            key = 69;
+        }
+    }
+
+    if((frontLa < 20) && (frontRa < 20) && (sideL < -20) && (sideR < -20)) {
+        //left
+        turnleft();
+        ledcWrite(ENA1, sideS);
+        ledcWrite(ENB1, sideS);
+
+        key = 4;
+
+        if(Speed > 15) {
+            boostleft();
+
+            key = 69;
+        }
+    }
+
+    if((frontLa < 20) && (frontRa < 20) && (sideL > 20) && (sideR > 20)) {
+        //right
+        turnright();
+        ledcWrite(ENA1, sideS);
+        ledcWrite(ENB1, sideS);
+
+        key = 5;
+
+        if(Speed > 15) {
+            boostright();
+
+            key = 69;
+        }
+    }
+
+    if((frontL < -20) && (frontR > 20) && (sideLa < 20) && (sideRa < 20)) {
+        //rotate to right
+        rotateright();
+        ledcWrite(ENA1, frontS);
+        ledcWrite(ENB1, frontS);
+
+        key = 6;
+
+        if(Speed > 15) {
+            rrboost();
+
+            key = 69;
+        }
+    }
+
+    if((frontL > 20) && (frontR < -20) && (sideLa < 20) && (sideRa < 20)) {
+        //rotate to left
+        rotateleft();
+        ledcWrite(ENA1, frontS);
+        ledcWrite(ENB1, frontS);
+
+        key = 7;
+
+        if(Speed > 15) {
+            rlboost();
+
+            key = 69;
+        }
+    }
+
+    troubleshoot();
+
+    delay(200);
+  } 
+  
+  else {
+    Serial.println("PS3 controller not connected.");
+    delay(1000);
+  }
+}
+
+void gostraight() {
+    digitalWrite(IN11, LOW);
+    digitalWrite(IN21, HIGH);
+    digitalWrite(IN31, LOW);
+    digitalWrite(IN41, HIGH);
+}
+
+void boost() {
+    digitalWrite(IN12, LOW);
+    digitalWrite(IN22, HIGH);
+    digitalWrite(IN32, LOW);
+    digitalWrite(IN42, HIGH);
+
+    ledcWrite(ENA2, speeds);
+    ledcWrite(ENB2, speeds);
+}
+
+void goback() {
+    digitalWrite(IN11, HIGH);
+    digitalWrite(IN21, LOW);
+    digitalWrite(IN31, HIGH);
+    digitalWrite(IN41, LOW);
+}
+
+void reverseboost() {
+    digitalWrite(IN12, HIGH);
+    digitalWrite(IN22, LOW);
+    digitalWrite(IN32, HIGH);
+    digitalWrite(IN42, LOW);
+
+    ledcWrite(ENA2, speeds);
+    ledcWrite(ENB2, speeds);
+}
+
+void turnleft() {
+    digitalWrite(IN11, LOW);
+    digitalWrite(IN21, HIGH);
+    digitalWrite(IN31, LOW);
+    digitalWrite(IN41, LOW);
+}
+
+void boostleft() {
+    digitalWrite(IN12, LOW);
+    digitalWrite(IN22, HIGH);
+    digitalWrite(IN32, LOW);
+    digitalWrite(IN42, LOW);
+
+    ledcWrite(ENA2, 0);
+    ledcWrite(ENB2, 0);
+}
+
+void turnright() {
+    digitalWrite(IN11, LOW);
+    digitalWrite(IN21, LOW);
+    digitalWrite(IN31, LOW);
+    digitalWrite(IN41, HIGH);
+}
+
+void boostright() {
+    digitalWrite(IN12, LOW);
+    digitalWrite(IN22, LOW);
+    digitalWrite(IN32, LOW);
+    digitalWrite(IN42, HIGH);
+
+    ledcWrite(ENA2, speeds);
+    ledcWrite(ENB2, speeds); 
+}
+
+void rotateright() {
+    digitalWrite(IN11, LOW);
+    digitalWrite(IN21, HIGH);
+    digitalWrite(IN31, HIGH);
+    digitalWrite(IN41, LOW);
+}
+
+void rrboost() {
+    digitalWrite(IN12, LOW);
+    digitalWrite(IN22, HIGH);
+    digitalWrite(IN32, HIGH);
+    digitalWrite(IN42, LOW);
+
+    ledcWrite(ENA2, speeds);
+    ledcWrite(ENB2, speeds);
+}
+
+void rotateleft() {
+    digitalWrite(IN11, HIGH);
+    digitalWrite(IN21, LOw);
+    digitalWrite(IN31, LOW);
+    digitalWrite(IN41, HIGH);
+}
+
+void rlboost() {
+    digitalWrite(IN12, HIGH);
+    digitalWrite(IN22, LOW);
+    digitalWrite(IN32, LOW);
+    digitalWrite(IN42, HIGH);
+
+    ledcWrite(ENA2, speeds);
+    ledcWrite(ENB2, speeds);
+}
+
+void stop() {
+    digitalWrite(IN11, LOW);
+    digitalWrite(IN21, LOW);
+    digitalWrite(IN31, LOW);
+    digitalWrite(IN41, LOW);
+
+    ledcWrite(ENA1, 0);
+    ledcWrite(ENB1, 0);
+}
+
+void stopboost() {
+    digitalWrite(IN12, LOW);
+    digitalWrite(IN22, LOW);
+    digitalWrite(IN32, LOW);
+    digitalWrite(IN42, LOW);
+
+    ledcWrite(ENA2, 0);
+    ledcWrite(ENB2, 0);
+}
+
+void troubleshoot() {
+   Serial.print("Left stick(speed): ");
+   Serial.println(frontS);
+   Serial.print("Right stick(speed): ");
+   Serial.println(sideR);
+   Serial.print("boost");
+   Serial.println(Speed);
+
+   switch(key) {
+    case 1: 
+    Serial.println("Stop...");
+    break;
+
+    case 2:
+    Serial.println("going straight...");
+    break;
+
+    case 3: 
+    Serial.println("going backward...");
+    break;
+
+    case 4:
+    Serial.println("going left...");
+    break;
+
+    case 5:
+    Serial.println("going right...");
+    break;
+
+    case 6:
+    Serial.println("rotating right");
+    break;
+
+    case 7:
+    Serial.println("rotating to left");
+    break;
+
+    case 69:
+    Serial.println("boosted...");
+    break;
+
+    default:
+    Serial.println("no movement...");
+    break;
+   }
+}
+
+
+
